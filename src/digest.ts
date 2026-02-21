@@ -91,16 +91,25 @@ export function buildDigest(tweets: Tweet[], config: Config, accountsChecked: nu
   const threadTweetIds = new Set(threads.flatMap((t) => t.tweets.map((tw) => tw.id)));
   const filteredVirals = virals.filter((v) => !threadTweetIds.has(v.id));
 
+  // Compute weak signals: tweets not in virals or threads, with some engagement
+  const viralIds = new Set(filteredVirals.map((v) => v.id));
+  const excludedIds = new Set([...viralIds, ...threadTweetIds]);
+  const weakSignals = tweets
+    .filter((t) => !excludedIds.has(t.id) && t.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, config.topNWeakSignals);
+
   const today = new Date().toISOString().split("T")[0];
 
   log(
-    `Digest built: ${filteredVirals.length} virals, ${threads.length} threads, ${tweets.length} total tweets`
+    `Digest built: ${filteredVirals.length} virals, ${threads.length} threads, ${weakSignals.length} weak signals, ${tweets.length} total tweets`
   );
 
   return {
     date: today,
     virals: filteredVirals,
     threads,
+    weakSignals,
     totalTweetsFetched: tweets.length,
     accountsChecked,
   };

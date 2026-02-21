@@ -79,13 +79,33 @@ function buildThreadCard(thread: Thread, t: Translations): string {
     </div>`;
 }
 
+function splitSummary(summary: string): { trends: string; weakSignals: string } {
+  const sections = summary.split(/(?=^## )/m);
+  let trends = "";
+  let weakSignals = "";
+
+  for (const section of sections) {
+    const lower = section.toLowerCase();
+    if (lower.includes("tendances") || lower.includes("trends") || lower.includes("tendencias")) {
+      // Remove the ## heading line — we render our own heading in the template
+      trends = section.replace(/^## .+\n?/, "").trim();
+    } else if (lower.includes("signaux") || lower.includes("signals") || lower.includes("señales") || lower.includes("se\u00f1ales")) {
+      weakSignals = section.replace(/^## .+\n?/, "").trim();
+    }
+  }
+
+  return { trends, weakSignals };
+}
+
 export async function buildEmailHtml(
   digest: DigestData,
   summary: string,
   config: Config
 ): Promise<string> {
   const t = getTranslations(config.lang);
-  const summaryHtml = await marked(summary);
+  const { trends, weakSignals } = splitSummary(summary);
+  const trendsHtml = await marked(trends);
+  const weakSignalsHtml = await marked(weakSignals);
   const dateFormatted = new Date(digest.date).toLocaleDateString(t.dateLocale, {
     weekday: "long",
     year: "numeric",
@@ -115,13 +135,15 @@ export async function buildEmailHtml(
       <p style="margin:8px 0 0;color:#8899a6;font-size:14px;">${escapeHtml(dateFormatted)}</p>
     </div>
 
-    <!-- Summary -->
+    ${trends ? `
+    <!-- Trends -->
     <div class="section-light" style="background:#fff;padding:24px;border-bottom:1px solid #e1e8ed;">
-      <h2 class="text-primary" style="margin:0 0 16px;color:#0f1419;font-size:18px;">\ud83d\udccb ${t.aiSummaryHeading}</h2>
+      <h2 class="text-primary" style="margin:0 0 16px;color:#0f1419;font-size:18px;">\ud83d\udd25 ${t.trendsHeading}</h2>
       <div class="text-primary" style="color:#0f1419;font-size:15px;line-height:1.6;">
-        ${summaryHtml}
+        ${trendsHtml}
       </div>
     </div>
+    ` : ""}
 
     ${digest.virals.length > 0 ? `
     <!-- Viral tweets -->
@@ -136,6 +158,16 @@ export async function buildEmailHtml(
     <div class="section-bg" style="background:#f5f8fa;padding:24px;">
       <h2 class="text-primary" style="margin:0 0 16px;color:#0f1419;font-size:18px;">\ud83e\uddf5 ${t.threadsHeading} (${digest.threads.length})</h2>
       ${threadCards}
+    </div>
+    ` : ""}
+
+    ${weakSignals ? `
+    <!-- Weak Signals -->
+    <div class="section-light" style="background:#fff;padding:24px;border-bottom:1px solid #e1e8ed;">
+      <h2 class="text-primary" style="margin:0 0 16px;color:#0f1419;font-size:18px;">\ud83d\udce1 ${t.weakSignalsHeading}</h2>
+      <div class="text-primary" style="color:#0f1419;font-size:15px;line-height:1.6;">
+        ${weakSignalsHtml}
+      </div>
     </div>
     ` : ""}
 
@@ -168,7 +200,7 @@ export async function sendDigestEmail(
   const { error } = await resend.emails.send({
     from: config.emailFrom,
     to: config.emailTo,
-    subject: `\u2615 X Digest \u2014 ${digest.date} \u00b7 ${digest.virals.length} ${t.viralLabel} \u00b7 ${digest.threads.length} threads`,
+    subject: `\u2615 X Digest \u2014 ${digest.date}`,
     html,
   });
 

@@ -91,6 +91,7 @@ export interface DigestData {
   date: string;
   virals: Tweet[];
   threads: Thread[];
+  weakSignals: Tweet[];
   totalTweetsFetched: number;
   accountsChecked: number;
 }

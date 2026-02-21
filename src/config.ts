@@ -15,6 +15,7 @@ export interface Config {
   viralThreshold: number;
   topNViral: number;
   topNThreads: number;
+  topNWeakSignals: number;
   lang: LangCode;
   followingsCacheTTL: number;
 }
@@ -57,8 +58,9 @@ export function loadConfig(): Config {
     digestHour: optionalEnvInt("DIGEST_HOUR", 7),
     lookbackHours: optionalEnvInt("LOOKBACK_HOURS", 24),
     viralThreshold: optionalEnvInt("VIRAL_THRESHOLD", 100),
-    topNViral: optionalEnvInt("TOP_N_VIRAL", 10),
+    topNViral: optionalEnvInt("TOP_N_VIRAL", 5),
     topNThreads: optionalEnvInt("TOP_N_THREADS", 5),
+    topNWeakSignals: optionalEnvInt("TOP_N_WEAK_SIGNALS", 15),
     lang: optionalEnvString("DIGEST_LANG", "en", ["en", "fr", "es"]),
     followingsCacheTTL: optionalEnvInt("FOLLOWINGS_CACHE_TTL", 24),
   };

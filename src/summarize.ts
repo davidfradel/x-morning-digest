@@ -12,6 +12,7 @@ function buildUserPrompt(digest: DigestData, config: Config): string {
 
   const viralSection = digest.virals.map((tw) => ({
     author: `@${tw.authorUsername}`,
+    url: tw.url,
     text: tw.text,
     likes: tw.stats.likes,
     retweets: tw.stats.retweets,
@@ -20,8 +21,17 @@ function buildUserPrompt(digest: DigestData, config: Config): string {
 
   const threadSection = digest.threads.map((th) => ({
     author: `@${th.authorUsername}`,
+    url: th.url,
     totalTweets: th.totalTweets,
-    tweets: th.tweets.map((tw) => tw.text),
+    tweets: th.tweets.map((tw) => ({ text: tw.text, url: tw.url })),
+  }));
+
+  const weakSignalSection = digest.weakSignals.map((tw) => ({
+    author: `@${tw.authorUsername}`,
+    url: tw.url,
+    text: tw.text,
+    likes: tw.stats.likes,
+    retweets: tw.stats.retweets,
   }));
 
   return `${t.userPromptIntro(digest.date)}
@@ -31,6 +41,9 @@ ${JSON.stringify(viralSection, null, 2)}
 
 ## ${t.threadsLabel} (${digest.threads.length})
 ${JSON.stringify(threadSection, null, 2)}
+
+## ${t.weakSignalsLabel} (${digest.weakSignals.length})
+${JSON.stringify(weakSignalSection, null, 2)}
 
 ${t.produceAnalysis}`;
 }

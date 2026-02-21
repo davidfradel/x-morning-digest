@@ -3,9 +3,10 @@ export type LangCode = "en" | "fr" | "es";
 export interface Translations {
   // Email
   emailTitle: string;
-  aiSummaryHeading: string;
+  trendsHeading: string;
   viralTweetsHeading: string;
   threadsHeading: string;
+  weakSignalsHeading: string;
   viewOnX: string;
   readFullThread: string;
   moreInThread: (count: number) => string;
@@ -27,14 +28,16 @@ export interface Translations {
   userPromptIntro: (date: string) => string;
   viralTweetsLabel: string;
   threadsLabel: string;
+  weakSignalsLabel: string;
   produceAnalysis: string;
 }
 
 const en: Translations = {
   emailTitle: "X Morning Digest",
-  aiSummaryHeading: "AI Summary",
+  trendsHeading: "Today's Trends",
   viralTweetsHeading: "Viral tweets",
   threadsHeading: "Threads",
+  weakSignalsHeading: "Weak Signals",
   viewOnX: "View on X \u2192",
   readFullThread: "Read full thread \u2192",
   moreInThread: (count) => `+ ${count} more tweets in this thread`,
@@ -52,34 +55,36 @@ const en: Translations = {
   dateLocale: "en-US",
 
   systemPrompt: `You are a technology and strategy intelligence analyst.
-You receive a selection of viral tweets and threads from influential tech accounts.
+You receive three datasets: viral tweets, threads, and non-viral tweets (potential weak signals) from influential tech accounts.
 
-Your role is to produce a structured summary in English, clear and actionable.
+Your role is to produce a structured analysis in English with exactly two sections.
 
 Expected format:
 
 ## \ud83d\udd25 Today's Trends
-- Topics dominating the conversation
+Synthesize the major themes and topics emerging from the viral tweets and threads. Focus on high-level trends, not individual tweets. Mention authors using markdown links like [@username](tweet_url) when relevant. Do not detail individual tweets — they will be displayed separately as cards below this section.
 
 ## \ud83d\udce1 Weak Signals
-- Less visible but potentially important information or opinions
+Analyze the non-viral tweets provided to identify emerging or underappreciated information, contrarian opinions, or early signs of important shifts. Reference specific tweets using markdown links like [@username](tweet_url). Focus on what makes these signals noteworthy despite their lower visibility.
 
-## \ud83d\udca1 Key Takeaways
-- Key insights, notable quotes or announcements not to be missed
-
-Be concise, factual, and mention authors (@username) when relevant.
-Do not repeat tweet content verbatim, synthesize.`,
+Important rules:
+- Use the format [text](url) to create clickable links when referencing tweets.
+- Be concise and factual.
+- Do NOT include a "Key Takeaways" section.
+- Do NOT repeat content that will appear in the viral tweets or threads cards.`,
   userPromptIntro: (date) => `Here is the Twitter digest data for ${date}:`,
   viralTweetsLabel: "Viral tweets",
   threadsLabel: "Threads",
-  produceAnalysis: "Produce your structured analysis.",
+  weakSignalsLabel: "Non-viral tweets (for weak signals analysis)",
+  produceAnalysis: "Produce your structured analysis with exactly two sections: Today's Trends and Weak Signals.",
 };
 
 const fr: Translations = {
   emailTitle: "X Morning Digest",
-  aiSummaryHeading: "R\u00e9sum\u00e9 IA",
+  trendsHeading: "Tendances du jour",
   viralTweetsHeading: "Tweets viraux",
   threadsHeading: "Threads",
+  weakSignalsHeading: "Signaux faibles",
   viewOnX: "Voir sur X \u2192",
   readFullThread: "Lire le thread complet \u2192",
   moreInThread: (count) => `+ ${count} autres tweets dans ce thread`,
@@ -97,34 +102,36 @@ const fr: Translations = {
   dateLocale: "fr-FR",
 
   systemPrompt: `Tu es un analyste de veille technologique et strat\u00e9gique.
-Tu re\u00e7ois une s\u00e9lection de tweets viraux et de threads provenant de comptes influents de la tech.
+Tu re\u00e7ois trois jeux de donn\u00e9es : des tweets viraux, des threads, et des tweets non-viraux (signaux faibles potentiels) provenant de comptes influents de la tech.
 
-Ton r\u00f4le est de produire un r\u00e9sum\u00e9 structur\u00e9 en fran\u00e7ais, clair et actionnable.
+Ton r\u00f4le est de produire une analyse structur\u00e9e en fran\u00e7ais avec exactement deux sections.
 
 Format attendu :
 
 ## \ud83d\udd25 Tendances du jour
-- Les sujets qui dominent la conversation
+Synth\u00e9tise les grands th\u00e8mes et sujets qui \u00e9mergent des tweets viraux et des threads. Concentre-toi sur les tendances de fond, pas sur les tweets individuels. Mentionne les auteurs avec des liens markdown comme [@username](url_du_tweet) quand c'est pertinent. Ne d\u00e9taille pas les tweets un par un \u2014 ils seront affich\u00e9s s\u00e9par\u00e9ment en cartes sous cette section.
 
 ## \ud83d\udce1 Signaux faibles
-- Les informations ou opinions moins visibles mais potentiellement importantes
+Analyse les tweets non-viraux fournis pour identifier les informations \u00e9mergentes ou sous-estim\u00e9es, les opinions contrariantes, ou les signes pr\u00e9coces de changements importants. R\u00e9f\u00e9rence les tweets sp\u00e9cifiques avec des liens markdown comme [@username](url_du_tweet). Explique en quoi ces signaux sont notables malgr\u00e9 leur faible visibilit\u00e9.
 
-## \ud83d\udca1 \u00c0 retenir
-- Les insights cl\u00e9s, citations marquantes ou annonces \u00e0 ne pas manquer
-
-Sois concis, factuel, et mentionne les auteurs (@username) quand c'est pertinent.
-Ne r\u00e9p\u00e8te pas le contenu des tweets mot pour mot, synth\u00e9tise.`,
+R\u00e8gles importantes :
+- Utilise le format [texte](url) pour cr\u00e9er des liens cliquables vers les tweets que tu mentionnes.
+- Sois concis et factuel.
+- N'inclus PAS de section "\u00c0 retenir".
+- Ne r\u00e9p\u00e8te PAS le contenu qui appara\u00eetra dans les cartes de tweets viraux ou de threads.`,
   userPromptIntro: (date) => `Voici les donn\u00e9es du digest Twitter du ${date} :`,
   viralTweetsLabel: "Tweets viraux",
   threadsLabel: "Threads",
-  produceAnalysis: "Produis ton analyse structur\u00e9e.",
+  weakSignalsLabel: "Tweets non-viraux (pour analyse des signaux faibles)",
+  produceAnalysis: "Produis ton analyse structur\u00e9e avec exactement deux sections : Tendances du jour et Signaux faibles.",
 };
 
 const es: Translations = {
   emailTitle: "X Morning Digest",
-  aiSummaryHeading: "Resumen IA",
+  trendsHeading: "Tendencias del d\u00eda",
   viralTweetsHeading: "Tweets virales",
   threadsHeading: "Hilos",
+  weakSignalsHeading: "Se\u00f1ales d\u00e9biles",
   viewOnX: "Ver en X \u2192",
   readFullThread: "Leer hilo completo \u2192",
   moreInThread: (count) => `+ ${count} tweets m\u00e1s en este hilo`,
@@ -142,27 +149,28 @@ const es: Translations = {
   dateLocale: "es-ES",
 
   systemPrompt: `Eres un analista de inteligencia tecnol\u00f3gica y estrat\u00e9gica.
-Recibes una selecci\u00f3n de tweets virales e hilos de cuentas influyentes de tecnolog\u00eda.
+Recibes tres conjuntos de datos: tweets virales, hilos, y tweets no virales (posibles se\u00f1ales d\u00e9biles) de cuentas influyentes de tecnolog\u00eda.
 
-Tu rol es producir un resumen estructurado en espa\u00f1ol, claro y accionable.
+Tu rol es producir un an\u00e1lisis estructurado en espa\u00f1ol con exactamente dos secciones.
 
 Formato esperado:
 
 ## \ud83d\udd25 Tendencias del d\u00eda
-- Los temas que dominan la conversaci\u00f3n
+Sintetiza los grandes temas y t\u00f3picos que emergen de los tweets virales y los hilos. Enf\u00f3cate en las tendencias generales, no en tweets individuales. Menciona a los autores con enlaces markdown como [@username](url_del_tweet) cuando sea relevante. No detalles tweets individualmente \u2014 se mostrar\u00e1n por separado como tarjetas debajo de esta secci\u00f3n.
 
 ## \ud83d\udce1 Se\u00f1ales d\u00e9biles
-- Informaci\u00f3n u opiniones menos visibles pero potencialmente importantes
+Analiza los tweets no virales proporcionados para identificar informaci\u00f3n emergente o subestimada, opiniones contrarias, o se\u00f1ales tempranas de cambios importantes. Referencia tweets espec\u00edficos con enlaces markdown como [@username](url_del_tweet). Explica por qu\u00e9 estas se\u00f1ales son destacables a pesar de su baja visibilidad.
 
-## \ud83d\udca1 Puntos clave
-- Insights clave, citas destacadas o anuncios que no hay que perderse
-
-S\u00e9 conciso, factual, y menciona a los autores (@username) cuando sea relevante.
-No repitas el contenido de los tweets palabra por palabra, sintetiza.`,
+Reglas importantes:
+- Usa el formato [texto](url) para crear enlaces clicables hacia los tweets que mencionas.
+- S\u00e9 conciso y factual.
+- NO incluyas una secci\u00f3n "Puntos clave".
+- NO repitas contenido que aparecer\u00e1 en las tarjetas de tweets virales o hilos.`,
   userPromptIntro: (date) => `Aqu\u00ed est\u00e1n los datos del digest de Twitter del ${date}:`,
   viralTweetsLabel: "Tweets virales",
   threadsLabel: "Hilos",
-  produceAnalysis: "Produce tu an\u00e1lisis estructurado.",
+  weakSignalsLabel: "Tweets no virales (para an\u00e1lisis de se\u00f1ales d\u00e9biles)",
+  produceAnalysis: "Produce tu an\u00e1lisis estructurado con exactamente dos secciones: Tendencias del d\u00eda y Se\u00f1ales d\u00e9biles.",
 };
 
 const translations: Record<LangCode, Translations> = { en, fr, es };
