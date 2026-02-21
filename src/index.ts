@@ -1,4 +1,3 @@
-import cron from "node-cron";
 import { loadConfig } from "./config.js";
 import { loadFollowingsWithCache, fetchTimeline } from "./twitter.js";
 import { buildDigest } from "./digest.js";
@@ -52,46 +51,20 @@ async function runDigest(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const isNow = process.argv.includes("--now");
-
-  if (isNow) {
-    log("Running in immediate mode (--now)");
+  try {
+    await runDigest();
+    process.exit(0);
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    console.error("Pipeline error:", error.message);
     try {
-      await runDigest();
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      console.error("Pipeline error:", error.message);
-      try {
-        const config = loadConfig();
-        await sendAlertEmail(error, config);
-      } catch (alertErr) {
-        console.error("Failed to send alert email:", alertErr);
-      }
-      process.exit(1);
+      const config = loadConfig();
+      await sendAlertEmail(error, config);
+    } catch (alertErr) {
+      console.error("Failed to send alert email:", alertErr);
     }
-    return;
+    process.exit(1);
   }
-
-  // Cron mode
-  const config = loadConfig();
-  const cronExpression = `0 ${config.digestHour} * * *`;
-  log(`Scheduling digest at hour ${config.digestHour} (cron: ${cronExpression})`);
-
-  cron.schedule(cronExpression, async () => {
-    try {
-      await runDigest();
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      console.error("Pipeline error:", error.message);
-      try {
-        await sendAlertEmail(error, config);
-      } catch (alertErr) {
-        console.error("Failed to send alert email:", alertErr);
-      }
-    }
-  });
-
-  log("Cron scheduled. Waiting...");
 }
 
 main();

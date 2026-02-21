@@ -10,7 +10,6 @@ export interface Config {
   resendApiKey: string;
   emailFrom: string;
   emailTo: string;
-  digestHour: number;
   lookbackHours: number;
   viralThreshold: number;
   topNViral: number;
@@ -55,7 +54,6 @@ export function loadConfig(): Config {
     resendApiKey: requireEnv("RESEND_API_KEY"),
     emailFrom: requireEnv("EMAIL_FROM"),
     emailTo: requireEnv("EMAIL_TO"),
-    digestHour: optionalEnvInt("DIGEST_HOUR", 7),
     lookbackHours: optionalEnvInt("LOOKBACK_HOURS", 24),
     viralThreshold: optionalEnvInt("VIRAL_THRESHOLD", 100),
     topNViral: optionalEnvInt("TOP_N_VIRAL", 5),
