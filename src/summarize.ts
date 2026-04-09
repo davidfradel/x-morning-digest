@@ -48,6 +48,13 @@ ${JSON.stringify(weakSignalSection, null, 2)}
 ${t.produceAnalysis}`;
 }
 
+const MAX_RETRIES = 3;
+const INITIAL_RETRY_DELAY_MS = 2000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function generateSummary(
   digest: DigestData,
   config: Config
@@ -63,23 +70,39 @@ export async function generateSummary(
 
   const client = new Anthropic({ apiKey: config.anthropicApiKey });
 
-  const message = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 2048,
-    system: t.systemPrompt,
-    messages: [
-      {
-        role: "user",
-        content: buildUserPrompt(digest, config),
-      },
-    ],
-  });
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      const message = await client.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 2048,
+        system: t.systemPrompt,
+        messages: [
+          {
+            role: "user",
+            content: buildUserPrompt(digest, config),
+          },
+        ],
+      });
 
-  const text = message.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("\n");
+      const text = message.content
+        .filter((block) => block.type === "text")
+        .map((block) => block.text)
+        .join("\n");
 
-  log(`Summary generated (${text.length} chars)`);
-  return text;
+      log(`Summary generated (${text.length} chars)`);
+      return text;
+    } catch (err) {
+      lastError = err as Error;
+      const status = (err as { status?: number }).status;
+      if (status === 429 || status === 529 || (status !== undefined && status >= 500)) {
+        const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt);
+        log(`Anthropic API error (${status}) - retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+        await sleep(delay);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError ?? new Error("generateSummary: all retries exhausted");
 }
