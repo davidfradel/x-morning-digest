@@ -7,8 +7,10 @@ const API_BASE = "https://api.twitterapi.io/twitter/tweet/advanced_search";
 const FOLLOWINGS_API = "https://api.twitterapi.io/twitter/user/followings";
 const MAX_ACCOUNTS_PER_QUERY = 25;
 const MAX_PAGES = 25;
-const MAX_RETRIES = 3;
-const INITIAL_RETRY_DELAY_MS = 1000;
+const MAX_RETRIES = 6;
+const INITIAL_RETRY_DELAY_MS = 2000;
+const MAX_RETRY_DELAY_MS = 30_000;
+const MAX_ERROR_BODY_CHARS = 300;
 
 function log(msg: string) {
   console.log(`[${new Date().toISOString()}] [twitter] ${msg}`);
@@ -45,30 +47,39 @@ async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchWithRetry(
+export async function fetchWithRetry(
   url: string,
   options: RequestInit,
-  retries = MAX_RETRIES
+  { retries = MAX_RETRIES, baseDelayMs = INITIAL_RETRY_DELAY_MS }: { retries?: number; baseDelayMs?: number } = {}
 ): Promise<Response> {
-  let lastError: Error | null = null;
+  let lastFailure = "no attempt made";
+  let lastError: unknown;
+
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
       const response = await fetch(url, options);
-      if (response.status === 429 || response.status >= 500) {
-        const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt);
-        log(`HTTP ${response.status} - retrying in ${delay}ms (attempt ${attempt + 1}/${retries})`);
-        await sleep(delay);
-        continue;
+      if (response.status !== 429 && response.status < 500) {
+        return response;
       }
-      return response;
+      const body = await response.text().catch(() => "");
+      lastFailure = `HTTP ${response.status}: ${body.slice(0, MAX_ERROR_BODY_CHARS)}`;
+      lastError = undefined;
     } catch (err) {
-      lastError = err as Error;
-      const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt);
-      log(`Request error: ${lastError.message} - retrying in ${delay}ms (attempt ${attempt + 1}/${retries})`);
+      lastFailure = `request error: ${(err as Error).message}`;
+      lastError = err;
+    }
+
+    if (attempt < retries - 1) {
+      const delay = Math.min(baseDelayMs * Math.pow(2, attempt), MAX_RETRY_DELAY_MS);
+      log(`${lastFailure} - retrying in ${delay}ms (attempt ${attempt + 1}/${retries})`);
       await sleep(delay);
     }
   }
-  throw lastError ?? new Error("fetchWithRetry: all retries exhausted");
+
+  throw new Error(
+    `twitterapi.io ${new URL(url).pathname} still failing after ${retries} attempts. Last failure: ${lastFailure}`,
+    { cause: lastError }
+  );
 }
 
 function buildQuery(accounts: string[], sinceDate: string): string {
@@ -88,8 +99,9 @@ async function searchTweets(
   apiKey: string,
   query: string,
   cutoffDate: Date
-): Promise<Tweet[]> {
+): Promise<{ tweets: Tweet[]; rawCount: number }> {
   const tweets: Tweet[] = [];
+  let rawCount = 0;
   let cursor: string | undefined;
   let page = 0;
 
@@ -121,9 +133,16 @@ async function searchTweets(
     const data = (await response.json()) as TwitterApiSearchResponse;
 
     if (!data.tweets || data.tweets.length === 0) {
-      log("No more tweets in response");
+      if (page === 0) {
+        // An empty first page is what a degraded search API looks like: keep the body for diagnosis.
+        log(`Empty first page, raw response: ${JSON.stringify(data).slice(0, MAX_ERROR_BODY_CHARS)}`);
+      } else {
+        log("No more tweets in response");
+      }
       break;
     }
+
+    rawCount += data.tweets.length;
 
     let hitCutoff = false;
     for (const raw of data.tweets) {
@@ -151,7 +170,7 @@ async function searchTweets(
     page++;
   }
 
-  return tweets;
+  return { tweets, rawCount };
 }
 
 export async function fetchFollowings(config: Config): Promise<string[]> {
@@ -268,11 +287,22 @@ export async function fetchTimeline(config: Config, followedAccounts: string[]):
 
   const chunks = chunkArray(followedAccounts, MAX_ACCOUNTS_PER_QUERY);
   const allTweets: Tweet[] = [];
+  let rawTweetCount = 0;
 
   for (const chunk of chunks) {
     const query = buildQuery(chunk, sinceDate);
-    const tweets = await searchTweets(config.twitterApiKey, query, cutoffDate);
+    const { tweets, rawCount } = await searchTweets(config.twitterApiKey, query, cutoffDate);
     allTweets.push(...tweets);
+    rawTweetCount += rawCount;
+  }
+
+  // The API answering without a single tweet for every query is a degraded search, not a quiet day:
+  // fail loudly rather than send an empty digest.
+  if (rawTweetCount === 0) {
+    throw new Error(
+      `Twitter search returned no tweets at all for ${followedAccounts.length} accounts since ${sinceDate}. ` +
+        "The search API is probably degraded (empty responses), so this is not treated as a quiet day."
+    );
   }
 
   // Deduplicate by ID
