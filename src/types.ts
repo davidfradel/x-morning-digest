@@ -36,6 +36,18 @@ export interface TwitterApiSearchResponse {
   next_cursor?: string;
 }
 
+export interface TwitterApiUserTweetsResponse {
+  status: string;
+  code?: number;
+  msg?: string;
+  data?: {
+    pin_tweet?: TwitterApiTweet | null;
+    tweets?: TwitterApiTweet[];
+  };
+  has_next_page: boolean;
+  next_cursor?: string;
+}
+
 export interface TwitterApiFollowing {
   id: string;
   userName: string;

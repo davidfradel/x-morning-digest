@@ -97,6 +97,8 @@ Costs per run depend on your follow count and tweet volume. Typical example with
 | Resend (email) | Free tier |
 | **Total per run** | **~$0.05–0.10** |
 
+If twitterapi.io's search fails or returns nothing, step 2 falls back to reading each account's own timeline. That path is billed for every tweet listed (20 or more per account, so roughly $0.20–0.25 for ~60 accounts) and only runs when search is unavailable. If neither path returns anything, the run fails with an alert email instead of sending an empty digest.
+
 ## Tech Stack
 
 - **TypeScript** — type-safe codebase

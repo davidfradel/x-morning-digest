@@ -1,12 +1,22 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Config } from "./config.js";
-import type { Tweet, TwitterApiFollowingsResponse, TwitterApiSearchResponse, TwitterApiTweet } from "./types.js";
+import type {
+  Tweet,
+  TwitterApiFollowingsResponse,
+  TwitterApiSearchResponse,
+  TwitterApiTweet,
+  TwitterApiUserTweetsResponse,
+} from "./types.js";
 
 const API_BASE = "https://api.twitterapi.io/twitter/tweet/advanced_search";
 const FOLLOWINGS_API = "https://api.twitterapi.io/twitter/user/followings";
+const USER_TWEETS_API = "https://api.twitterapi.io/twitter/user/last_tweets";
 const MAX_ACCOUNTS_PER_QUERY = 25;
 const MAX_PAGES = 25;
+const MAX_PAGES_PER_ACCOUNT = 5;
+const TIMELINE_CONCURRENCY = 5;
+const TIMELINE_RETRIES = 3;
 const MAX_RETRIES = 6;
 const INITIAL_RETRY_DELAY_MS = 2000;
 const MAX_RETRY_DELAY_MS = 30_000;
@@ -95,11 +105,17 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return chunks;
 }
 
+interface FetchedTweets {
+  tweets: Tweet[];
+  /** Tweets the API listed before any filtering. Zero means the API gave us nothing at all. */
+  rawCount: number;
+}
+
 async function searchTweets(
   apiKey: string,
   query: string,
   cutoffDate: Date
-): Promise<{ tweets: Tweet[]; rawCount: number }> {
+): Promise<FetchedTweets> {
   const tweets: Tweet[] = [];
   let rawCount = 0;
   let cursor: string | undefined;
@@ -170,6 +186,98 @@ async function searchTweets(
     page++;
   }
 
+  return { tweets, rawCount };
+}
+
+/** Recent tweets of one account, read from its own timeline. */
+async function fetchUserTweets(apiKey: string, userName: string, cutoffDate: Date): Promise<FetchedTweets> {
+  const tweets: Tweet[] = [];
+  let rawCount = 0;
+  let cursor = "";
+
+  for (let page = 0; page < MAX_PAGES_PER_ACCOUNT; page++) {
+    const params = new URLSearchParams({ userName, includeReplies: "true", cursor });
+    const response = await fetchWithRetry(
+      `${USER_TWEETS_API}?${params.toString()}`,
+      { method: "GET", headers: { "X-API-Key": apiKey } },
+      { retries: TIMELINE_RETRIES }
+    );
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`User tweets API error ${response.status}: ${body.slice(0, MAX_ERROR_BODY_CHARS)}`);
+    }
+
+    const data = (await response.json()) as TwitterApiUserTweetsResponse;
+    if (data.status !== "success") {
+      throw new Error(`User tweets API error: ${data.msg ?? JSON.stringify(data).slice(0, MAX_ERROR_BODY_CHARS)}`);
+    }
+
+    const pageTweets = data.data?.tweets ?? [];
+    if (pageTweets.length === 0) break;
+    rawCount += pageTweets.length;
+
+    let hitCutoff = false;
+    for (const raw of pageTweets) {
+      // A timeline also lists the account's retweets, under the original author's name.
+      if (raw.isRetweet || raw.author.userName.toLowerCase() !== userName.toLowerCase()) continue;
+
+      if (new Date(raw.createdAt) < cutoffDate) {
+        hitCutoff = true;
+        break;
+      }
+
+      tweets.push(mapTweet(raw));
+    }
+
+    if (hitCutoff || !data.has_next_page || !data.next_cursor) break;
+    cursor = data.next_cursor;
+  }
+
+  return { tweets, rawCount };
+}
+
+/**
+ * Fallback for when search is unavailable: reads each account's own timeline.
+ * It is slower and billed for every tweet listed (about 20 per account), so search stays the default.
+ */
+async function fetchUserTimelines(apiKey: string, accounts: string[], cutoffDate: Date): Promise<FetchedTweets> {
+  const tweets: Tweet[] = [];
+  let rawCount = 0;
+  let succeeded = 0;
+  const failures: string[] = [];
+  const queue = [...accounts];
+
+  const worker = async () => {
+    while (queue.length > 0) {
+      // Nothing works at all: stop rather than retry every remaining account.
+      if (succeeded === 0 && failures.length >= TIMELINE_CONCURRENCY) return;
+
+      const userName = queue.shift()!;
+      try {
+        const fetched = await fetchUserTweets(apiKey, userName, cutoffDate);
+        tweets.push(...fetched.tweets);
+        rawCount += fetched.rawCount;
+        succeeded++;
+      } catch (err) {
+        const failure = `@${userName}: ${(err as Error).message}`;
+        failures.push(failure);
+        log(`Timeline failed for ${failure}`);
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: TIMELINE_CONCURRENCY }, worker));
+
+  if (succeeded === 0 && failures.length > 0) {
+    throw new Error(`the per-account timelines failed too (${failures[failures.length - 1]})`);
+  }
+
+  const cost = (rawCount * 0.15) / 1000;
+  log(
+    `Timelines read for ${succeeded}/${accounts.length} accounts: ${rawCount} tweets listed (~$${cost.toFixed(2)}), ` +
+      `${tweets.length} in the lookback window`
+  );
   return { tweets, rawCount };
 }
 
@@ -288,20 +396,45 @@ export async function fetchTimeline(config: Config, followedAccounts: string[]):
   const chunks = chunkArray(followedAccounts, MAX_ACCOUNTS_PER_QUERY);
   const allTweets: Tweet[] = [];
   let rawTweetCount = 0;
+  let searchFailure: string | null = null;
+  const describeSearch = () => (searchFailure ? `search failed (${searchFailure})` : "search returned nothing");
 
   for (const chunk of chunks) {
-    const query = buildQuery(chunk, sinceDate);
-    const { tweets, rawCount } = await searchTweets(config.twitterApiKey, query, cutoffDate);
-    allTweets.push(...tweets);
-    rawTweetCount += rawCount;
+    let fetched: FetchedTweets | null = null;
+
+    // Once search has failed for good, don't sit through its retries again for every chunk.
+    if (searchFailure === null) {
+      try {
+        fetched = await searchTweets(config.twitterApiKey, buildQuery(chunk, sinceDate), cutoffDate);
+      } catch (err) {
+        searchFailure = (err as Error).message;
+        log(`Search failed: ${searchFailure}`);
+      }
+    }
+
+    // No answer, or an answer without a single tweet (what a degraded search looks like):
+    // read the accounts' timelines instead.
+    if (fetched === null || fetched.rawCount === 0) {
+      log(`Falling back to per-account timelines for ${chunk.length} accounts`);
+      try {
+        fetched = await fetchUserTimelines(config.twitterApiKey, chunk, cutoffDate);
+      } catch (err) {
+        throw new Error(
+          `Could not fetch tweets for ${followedAccounts.length} accounts: ${describeSearch()} and ${(err as Error).message}`
+        );
+      }
+    }
+
+    allTweets.push(...fetched.tweets);
+    rawTweetCount += fetched.rawCount;
   }
 
-  // The API answering without a single tweet for every query is a degraded search, not a quiet day:
+  // Not a single tweet listed by either endpoint is an API problem, not a quiet day:
   // fail loudly rather than send an empty digest.
   if (rawTweetCount === 0) {
     throw new Error(
-      `Twitter search returned no tweets at all for ${followedAccounts.length} accounts since ${sinceDate}. ` +
-        "The search API is probably degraded (empty responses), so this is not treated as a quiet day."
+      `No tweet at all could be fetched for ${followedAccounts.length} accounts since ${sinceDate}: ` +
+        `${describeSearch()} and the per-account timelines were empty too. This is not treated as a quiet day.`
     );
   }
 
